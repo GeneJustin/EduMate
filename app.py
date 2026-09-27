@@ -2,6 +2,7 @@ import os
 import json
 import time
 from datetime import datetime
+
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
 from google import genai
@@ -475,25 +476,27 @@ Student question:
         }), 500
 
 
-@app.route("/api/upload", methods=["POST"])
-def upload_material():
+@app.route("/api/upload-url", methods=["POST"])
+def create_upload_url():
 
     try:
 
-        if "file" not in request.files:
+        data = request.get_json()
+
+        if not data:
             return jsonify({
-                "error": "No file uploaded."
+                "error": "Invalid request."
             }), 400
 
-        file = request.files["file"]
+        filename = data.get("filename", "").strip()
 
-        if file.filename == "":
+        if not filename:
             return jsonify({
-                "error": "No file selected."
+                "error": "Filename is required."
             }), 400
 
         extension = (
-            file.filename
+            filename
             .rsplit(".", 1)[-1]
             .lower()
         )
@@ -503,21 +506,103 @@ def upload_material():
                 "error": "Only PDF, PPT, and PPTX are supported."
             }), 400
 
-        filename = secure_filename(file.filename)
+        safe_filename = secure_filename(filename)
+
+        if not safe_filename:
+            return jsonify({
+                "error": "Invalid filename."
+            }), 400
+
+        timestamp = int(time.time())
+
+        storage_path = (
+            f"materials/{timestamp}_{safe_filename}"
+        )
+
+        response = (
+            supabase
+            .storage
+            .from_("materials")
+            .create_signed_upload_url(
+                storage_path
+            )
+        )
+
+        return jsonify({
+            "success": True,
+            "path": storage_path,
+            "token": response["token"]
+        })
+
+    except Exception as e:
+
+        print(
+            "UPLOAD URL ERROR:",
+            repr(e)
+        )
+
+        return jsonify({
+            "error": str(e)
+        }), 500
+    
+
+@app.route("/api/upload", methods=["POST"])
+def upload_material():
+
+    try:
+
+        data = request.get_json()
+
+        if not data:
+            return jsonify({
+                "error": "Invalid request."
+            }), 400
+
+        storage_path = data.get("path", "").strip()
+        filename = data.get("filename", "").strip()
+        extension = data.get("extension", "").strip().lower()
+
+        if not storage_path:
+            return jsonify({
+                "error": "Storage path is required."
+            }), 400
 
         if not filename:
+            return jsonify({
+                "error": "Filename is required."
+            }), 400
+
+        if extension not in ["pdf", "ppt", "pptx"]:
+            return jsonify({
+                "error": "Unsupported file type."
+            }), 400
+
+        safe_filename = secure_filename(filename)
+
+        if not safe_filename:
             return jsonify({
                 "error": "Invalid filename."
             }), 400
 
         path = os.path.join(
             app.config["UPLOAD_FOLDER"],
-            filename
+            safe_filename
         )
 
-        file.save(path)
+        file_data = (
+            supabase
+            .storage
+            .from_("materials")
+            .download(storage_path)
+        )
 
-        print("FILE SAVED:", path)
+        with open(path, "wb") as f:
+            f.write(file_data)
+
+        print(
+            "FILE DOWNLOADED FROM SUPABASE:",
+            path
+        )
 
         content = extract_text(
             path,
@@ -531,6 +616,7 @@ def upload_material():
         )
 
         if not content.strip():
+
             return jsonify({
                 "error": "Could not extract text from this file."
             }), 400
@@ -544,7 +630,7 @@ def upload_material():
             ensure_ascii=False
         )
 
-        response = (
+        (
             supabase
             .table("materials")
             .insert({
@@ -558,7 +644,9 @@ def upload_material():
             .execute()
         )
 
-        print("MATERIAL SAVED TO SUPABASE")
+        print(
+            "MATERIAL SAVED TO SUPABASE"
+        )
 
         return jsonify({
             "success": True,
@@ -568,12 +656,22 @@ def upload_material():
 
     except Exception as e:
 
-        print("UPLOAD ERROR:", repr(e))
+        print(
+            "UPLOAD ERROR:",
+            repr(e)
+        )
 
         return jsonify({
             "error": str(e)
         }), 500
 
+@app.route("/api/supabase-config")
+def supabase_config():
+
+    return jsonify({
+        "url": supabase_url,
+        "key": os.getenv("SUPABASE_PUBLISHABLE_KEY")
+    })
 
 @app.route("/api/materials/<int:material_id>")
 def get_material(material_id):
