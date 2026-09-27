@@ -15,11 +15,10 @@ load_dotenv()
 
 app = Flask(__name__)
 
-UPLOAD_FOLDER = "uploads"
-DATABASE = "database/study.db"
+UPLOAD_FOLDER = "/tmp/uploads"
+DATABASE = "/tmp/study.db"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs("database", exist_ok=True)
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
