@@ -7,28 +7,123 @@ async function uploadMaterial() {
         return;
     }
 
-    const formData = new FormData();
-    formData.append("file", input.files[0]);
+    const file = input.files[0];
 
-    status.textContent = "Uploading and summarizing...";
+    const extension = file.name
+        .split(".")
+        .pop()
+        .toLowerCase();
+
+    if (!["pdf", "ppt", "pptx"].includes(extension)) {
+        status.textContent =
+            "Error: Only PDF, PPT, and PPTX files are supported.";
+        return;
+    }
+
+    status.textContent = "Preparing upload...";
 
     try {
-        const response = await fetch("/api/upload", {
-            method: "POST",
-            body: formData
-        });
 
-        const data = await response.json();
+        const configResponse = await fetch(
+            "/api/supabase-config"
+        );
 
-        if (!response.ok) {
-            status.textContent =
-                "Error: " + (data.error || "Upload failed");
+        const config = await configResponse.json();
 
-            console.error(data);
-            return;
+        if (!configResponse.ok) {
+            throw new Error(
+                config.error ||
+                "Failed to get Supabase configuration."
+            );
         }
 
-        status.textContent = "Upload successful!";
+        if (!config.url || !config.key) {
+            throw new Error(
+                "Supabase configuration is missing."
+            );
+        }
+
+        const supabaseClient =
+            window.supabase.createClient(
+                config.url,
+                config.key
+            );
+
+        status.textContent =
+            "Preparing secure upload...";
+
+        const uploadUrlResponse = await fetch(
+            "/api/upload-url",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    filename: file.name
+                })
+            }
+        );
+
+        const uploadData =
+            await uploadUrlResponse.json();
+
+        if (!uploadUrlResponse.ok) {
+            throw new Error(
+                uploadData.error ||
+                "Failed to create upload URL."
+            );
+        }
+
+        status.textContent =
+            "Uploading file to storage...";
+
+        const storageResponse =
+            await supabaseClient.storage
+                .from("materials")
+                .uploadToSignedUrl(
+                    uploadData.path,
+                    uploadData.token,
+                    file
+                );
+
+        if (storageResponse.error) {
+            throw new Error(
+                storageResponse.error.message
+            );
+        }
+
+        status.textContent =
+            "File uploaded. Generating summary...";
+
+        const processResponse =
+            await fetch(
+                "/api/upload",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        path: uploadData.path,
+                        filename: file.name,
+                        extension: extension
+                    })
+                }
+            );
+
+        const data =
+            await processResponse.json();
+
+        if (!processResponse.ok) {
+            throw new Error(
+                data.error ||
+                "Failed to process material."
+            );
+        }
+
+        status.textContent =
+            "Upload successful!";
 
         setTimeout(() => {
             location.reload();
@@ -36,10 +131,14 @@ async function uploadMaterial() {
 
     } catch (error) {
 
-        console.error(error);
+        console.error(
+            "UPLOAD ERROR:",
+            error
+        );
 
         status.textContent =
-            "Upload failed: " + error.message;
+            "Upload failed: " +
+            error.message;
     }
 }
 
