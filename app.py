@@ -1,12 +1,11 @@
 import os
 import json
 import time
-import sqlite3
 from datetime import datetime
-
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
 from google import genai
+from supabase import create_client
 from pypdf import PdfReader
 from pptx import Presentation
 from werkzeug.utils import secure_filename
@@ -16,11 +15,23 @@ load_dotenv()
 app = Flask(__name__)
 
 UPLOAD_FOLDER = "/tmp/uploads"
-DATABASE = "/tmp/study.db"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+
+
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_KEY")
+
+if not supabase_url or not supabase_key:
+    raise ValueError("SUPABASE_URL and SUPABASE_KEY are required.")
+
+supabase = create_client(
+    supabase_url,
+    supabase_key
+)
+
 
 api_keys = [
     os.getenv("GEMINI_API_KEY"),
@@ -33,6 +44,9 @@ api_keys = [
     key for key in api_keys
     if key
 ]
+
+if not api_keys:
+    raise ValueError("No Gemini API keys found.")
 
 clients = [
     genai.Client(api_key=key)
@@ -75,9 +89,11 @@ def generate_json(prompt, schema):
                     "429" in error_message
                     or "RESOURCE_EXHAUSTED" in error_message
                 ):
+
                     print(
                         f"Gemini key {client_index + 1} quota exceeded."
                     )
+
                     break
 
                 if (
@@ -100,6 +116,7 @@ def generate_json(prompt, schema):
                 raise
 
     raise last_error
+
 
 def generate_text(prompt):
 
@@ -132,9 +149,11 @@ def generate_text(prompt):
                     "429" in error_message
                     or "RESOURCE_EXHAUSTED" in error_message
                 ):
+
                     print(
                         f"Gemini key {client_index + 1} quota exceeded."
                     )
+
                     break
 
                 if (
@@ -157,45 +176,6 @@ def generate_text(prompt):
                 raise
 
     raise last_error
-
-def get_db():
-
-    conn = sqlite3.connect(DATABASE)
-
-    conn.row_factory = sqlite3.Row
-
-    return conn
-
-
-def init_db():
-
-    conn = get_db()
-
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS materials (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            filename TEXT NOT NULL,
-            title TEXT NOT NULL,
-            file_type TEXT NOT NULL,
-            summary TEXT,
-            content TEXT,
-            created_at TEXT NOT NULL
-        )
-    """)
-
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS study_sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            start_time TEXT NOT NULL,
-            end_time TEXT,
-            duration INTEGER DEFAULT 0,
-            created_at TEXT NOT NULL
-        )
-    """)
-
-    conn.commit()
-
-    conn.close()
 
 
 def extract_pdf(path):
@@ -365,9 +345,6 @@ def parse_summary(summary, title):
         }
 
 
-init_db()
-
-
 @app.route("/")
 def index():
 
@@ -383,35 +360,61 @@ def chat():
 @app.route("/materials")
 def materials():
 
-    conn = get_db()
+    try:
 
-    materials = conn.execute(
-        "SELECT * FROM materials ORDER BY id DESC"
-    ).fetchall()
+        response = (
+            supabase
+            .table("materials")
+            .select("*")
+            .order("id", desc=True)
+            .execute()
+        )
 
-    conn.close()
+        materials_data = response.data
 
-    return render_template(
-        "materials.html",
-        materials=materials
-    )
+        return render_template(
+            "materials.html",
+            materials=materials_data
+        )
+
+    except Exception as e:
+
+        print("MATERIALS PAGE ERROR:", repr(e))
+
+        return render_template(
+            "materials.html",
+            materials=[]
+        )
 
 
 @app.route("/quiz")
 def quiz():
 
-    conn = get_db()
+    try:
 
-    materials = conn.execute(
-        "SELECT * FROM materials ORDER BY id DESC"
-    ).fetchall()
+        response = (
+            supabase
+            .table("materials")
+            .select("*")
+            .order("id", desc=True)
+            .execute()
+        )
 
-    conn.close()
+        materials_data = response.data
 
-    return render_template(
-        "quiz.html",
-        materials=materials
-    )
+        return render_template(
+            "quiz.html",
+            materials=materials_data
+        )
+
+    except Exception as e:
+
+        print("QUIZ PAGE ERROR:", repr(e))
+
+        return render_template(
+            "quiz.html",
+            materials=[]
+        )
 
 
 @app.route("/tracker")
@@ -541,31 +544,21 @@ def upload_material():
             ensure_ascii=False
         )
 
-        conn = get_db()
+        response = (
+            supabase
+            .table("materials")
+            .insert({
+                "filename": filename,
+                "title": os.path.splitext(filename)[0],
+                "file_type": extension,
+                "summary": summary_json,
+                "content": content,
+                "created_at": datetime.now().isoformat()
+            })
+            .execute()
+        )
 
-        conn.execute("""
-            INSERT INTO materials
-            (
-                filename,
-                title,
-                file_type,
-                summary,
-                content,
-                created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            filename,
-            os.path.splitext(filename)[0],
-            extension,
-            summary_json,
-            content,
-            datetime.now().isoformat()
-        ))
-
-        conn.commit()
-
-        conn.close()
+        print("MATERIAL SAVED TO SUPABASE")
 
         return jsonify({
             "success": True,
@@ -587,14 +580,16 @@ def get_material(material_id):
 
     try:
 
-        conn = get_db()
+        response = (
+            supabase
+            .table("materials")
+            .select("*")
+            .eq("id", material_id)
+            .single()
+            .execute()
+        )
 
-        material = conn.execute(
-            "SELECT * FROM materials WHERE id = ?",
-            (material_id,)
-        ).fetchone()
-
-        conn.close()
+        material = response.data
 
         if not material:
             return jsonify({
@@ -602,15 +597,15 @@ def get_material(material_id):
             }), 404
 
         summary = parse_summary(
-            material["summary"],
-            material["title"]
+            material.get("summary"),
+            material.get("title")
         )
 
         return jsonify({
-            "id": material["id"],
-            "title": material["title"],
-            "filename": material["filename"],
-            "file_type": material["file_type"],
+            "id": material.get("id"),
+            "title": material.get("title"),
+            "filename": material.get("filename"),
+            "file_type": material.get("file_type"),
             "summary": summary
         })
 
@@ -656,18 +651,16 @@ def generate_quiz():
                 "error": "Number of questions must be between 1 and 20."
             }), 400
 
-        conn = get_db()
+        response = (
+            supabase
+            .table("materials")
+            .select("title, content")
+            .eq("id", material_id)
+            .single()
+            .execute()
+        )
 
-        material = conn.execute(
-            """
-            SELECT title, content
-            FROM materials
-            WHERE id = ?
-            """,
-            (material_id,)
-        ).fetchone()
-
-        conn.close()
+        material = response.data
 
         if not material:
             return jsonify({
@@ -800,26 +793,22 @@ def start_study():
 
         start_time = datetime.now().isoformat()
 
-        conn = get_db()
+        response = (
+            supabase
+            .table("study_sessions")
+            .insert({
+                "start_time": start_time,
+                "created_at": start_time
+            })
+            .select("id, start_time")
+            .execute()
+        )
 
-        cursor = conn.execute("""
-            INSERT INTO study_sessions
-            (start_time, created_at)
-            VALUES (?, ?)
-        """, (
-            start_time,
-            start_time
-        ))
-
-        session_id = cursor.lastrowid
-
-        conn.commit()
-
-        conn.close()
+        session = response.data[0]
 
         return jsonify({
-            "session_id": session_id,
-            "start_time": start_time
+            "session_id": session["id"],
+            "start_time": session["start_time"]
         })
 
     except Exception as e:
@@ -850,44 +839,43 @@ def stop_study():
                 "error": "Session ID is required."
             }), 400
 
-        conn = get_db()
+        response = (
+            supabase
+            .table("study_sessions")
+            .select("*")
+            .eq("id", session_id)
+            .single()
+            .execute()
+        )
 
-        session = conn.execute(
-            "SELECT * FROM study_sessions WHERE id = ?",
-            (session_id,)
-        ).fetchone()
+        session = response.data
 
         if not session:
-
-            conn.close()
 
             return jsonify({
                 "error": "Session not found."
             }), 404
 
         start = datetime.fromisoformat(
-            session["start_time"]
+            session["start_time"].replace("Z", "+00:00")
         )
 
-        end = datetime.now()
+        end = datetime.now(start.tzinfo)
 
         duration = int(
             (end - start).total_seconds()
         )
 
-        conn.execute("""
-            UPDATE study_sessions
-            SET end_time = ?, duration = ?
-            WHERE id = ?
-        """, (
-            end.isoformat(),
-            duration,
-            session_id
-        ))
-
-        conn.commit()
-
-        conn.close()
+        (
+            supabase
+            .table("study_sessions")
+            .update({
+                "end_time": end.isoformat(),
+                "duration": duration
+            })
+            .eq("id", session_id)
+            .execute()
+        )
 
         return jsonify({
             "duration": duration
@@ -907,21 +895,24 @@ def study_stats():
 
     try:
 
-        conn = get_db()
+        response = (
+            supabase
+            .table("study_sessions")
+            .select("duration")
+            .gt("duration", 0)
+            .execute()
+        )
 
-        result = conn.execute("""
-            SELECT
-                COUNT(*) AS sessions,
-                COALESCE(SUM(duration), 0) AS total_seconds
-            FROM study_sessions
-            WHERE duration > 0
-        """).fetchone()
+        sessions = response.data
 
-        conn.close()
+        total_seconds = sum(
+            session.get("duration", 0) or 0
+            for session in sessions
+        )
 
         return jsonify({
-            "sessions": result["sessions"],
-            "total_seconds": result["total_seconds"]
+            "sessions": len(sessions),
+            "total_seconds": total_seconds
         })
 
     except Exception as e:
