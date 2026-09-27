@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h1>Welcome to EduMate </h1>
+
+<p>
+    Your AI-powered study assistant.
+</p>
+
+<div class="cards">
+
+    <a class="card" href="/chat">
+        <h2>💬 AI Chat</h2>
+        <p>
+            Ask questions and learn with AI.
+        </p>
+    </a>
+
+    <a class="card" href="/materials">
+        <h2>📚 Materials</h2>
+        <p>
+            Upload and summarize your learning materials.
+        </p>
+    </a>
+
+    <a class="card" href="/quiz">
+        <h2>🧠 Quiz Maker</h2>
+        <p>
+            Generate quizzes from your materials.
+        </p>
+    </a>
+
+    <a class="card" href="/tracker">
+        <h2>⏱️ Study Tracker</h2>
+        <p>
+            Track how long you study.
+        </p>
+    </a>
+
+</div>
+
+{% endblock %}

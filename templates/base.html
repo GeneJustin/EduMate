@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>EduMate</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/style.css') }}"
+    >
+</head>
+
+<body>
+
+    <aside class="sidebar">
+
+        <h2>EduMate</h2>
+
+        <nav>
+            <a href="/">Dashboard</a>
+            <a href="/chat">AI Chat</a>
+            <a href="/materials">Materials</a>
+            <a href="/quiz">Quiz Maker</a>
+            <a href="/tracker">Study Tracker</a>
+        </nav>
+
+    </aside>
+
+    <main class="main">
+
+        {% block content %}
+        {% endblock %}
+
+    </main>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+
+    {% block scripts %}
+    {% endblock %}
+
+</body>
+</html>

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-header">
+
+    <h1>Quiz Maker</h1>
+
+    <p>
+        Test your understanding based on your learning material.
+    </p>
+
+</div>
+
+
+<div class="quiz-form">
+
+    <div class="form-group">
+
+        <label for="materialSelect">
+            Select Material
+        </label>
+
+        <select id="materialSelect">
+
+            <option value="">
+                Select a material
+            </option>
+
+            {% for material in materials %}
+
+            <option value="{{ material.id }}">
+                {{ material.title }}
+            </option>
+
+            {% endfor %}
+
+        </select>
+
+    </div>
+
+
+    <div class="form-group">
+
+        <label for="questionCount">
+            Number of Questions
+        </label>
+
+        <select id="questionCount">
+
+            <option value="5">5 Questions</option>
+            <option value="10">10 Questions</option>
+            <option value="15">15 Questions</option>
+
+        </select>
+
+    </div>
+
+
+    <button
+        class="generate-button"
+        onclick="generateQuiz()"
+    >
+        Generate Quiz
+    </button>
+
+</div>
+
+
+<div id="quizResult"></div>
+
+{% endblock %}
+
+
+{% block scripts %}
+
+<script src="{{ url_for('static', filename='js/quiz.js') }}"></script>
+
+{% endblock %}

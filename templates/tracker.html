@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h1>Study Tracker</h1>
+
+<div class="tracker">
+
+    <div class="timer">
+
+        <h2 id="timer">
+            00:00:00
+        </h2>
+
+        <button
+            id="startButton"
+            onclick="startStudy()"
+        >
+            Start Studying
+        </button>
+
+        <button
+            id="stopButton"
+            onclick="stopStudy()"
+            disabled
+        >
+            Stop
+        </button>
+
+    </div>
+
+    <div class="stats">
+
+        <div class="stat">
+
+            <h3>
+                Total Study Time
+            </h3>
+
+            <p id="totalTime">
+                0 hours
+            </p>
+
+        </div>
+
+        <div class="stat">
+
+            <h3>
+                Study Sessions
+            </h3>
+
+            <p id="sessions">
+                0
+            </p>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+
+<script src="{{ url_for('static', filename='js/tracker.js') }}"></script>
+
+{% endblock %}
